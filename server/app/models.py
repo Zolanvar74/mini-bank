@@ -8,3 +8,4 @@ class TransactionRequest(BaseModel):
     action: str
     account: str | None = None
     amount: Any = None
+    failpoint: str | None = None
