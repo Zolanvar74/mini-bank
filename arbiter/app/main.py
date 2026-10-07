@@ -9,10 +9,15 @@ from arbiter.app.database import (
     get_cluster_state,
     initialize_database,
 )
-from arbiter.app.models import AcquireLeaseRequest
+from arbiter.app.models import (
+    AcquireLeaseRequest,
+    RenewLeaseRequest,
+)
 from arbiter.app.services import (
     LeaseHeldError,
+    LeaseRenewalError,
     acquire_leadership,
+    renew_leadership,
 )
 
 
@@ -67,6 +72,33 @@ def acquire_lease(payload: AcquireLeaseRequest):
             content={
                 "status": "error",
                 "code": "LEASE_HELD",
+                "leader_id": exc.leader_id,
+                "epoch": exc.epoch,
+                "lease_expires_at": exc.lease_expires_at,
+            },
+        )
+
+    return {
+        "status": "success",
+        "leader_id": result["leader_id"],
+        "epoch": result["epoch"],
+        "lease_expires_at": result["lease_expires_at"],
+    }
+    
+@app.post("/cluster/renew")
+def renew_lease(payload: RenewLeaseRequest):
+    try:
+        result = renew_leadership(
+            node_id=payload.node_id,
+            epoch=payload.epoch,
+        )
+
+    except LeaseRenewalError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "code": exc.code,
                 "leader_id": exc.leader_id,
                 "epoch": exc.epoch,
                 "lease_expires_at": exc.lease_expires_at,

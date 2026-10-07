@@ -170,3 +170,147 @@ def test_new_leader_gets_new_epoch_after_expiry(
 
         assert body["leader_id"] == "B"
         assert body["epoch"] == 2
+        
+def test_leader_can_renew_valid_lease(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "arbiter.db"
+
+    monkeypatch.setattr(
+        settings,
+        "arbiter_db_path",
+        str(db_path),
+    )
+
+    with TestClient(app) as client:
+        acquire = client.post(
+            "/cluster/acquire",
+            json={"node_id": "A"},
+        )
+
+        assert acquire.status_code == 200
+
+        first_expiry = acquire.json()["lease_expires_at"]
+
+        renew = client.post(
+            "/cluster/renew",
+            json={
+                "node_id": "A",
+                "epoch": 1,
+            },
+        )
+
+        assert renew.status_code == 200
+
+        body = renew.json()
+
+        assert body["status"] == "success"
+        assert body["leader_id"] == "A"
+        assert body["epoch"] == 1
+        assert body["lease_expires_at"] >= first_expiry
+
+
+def test_wrong_node_cannot_renew_lease(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "arbiter.db"
+
+    monkeypatch.setattr(
+        settings,
+        "arbiter_db_path",
+        str(db_path),
+    )
+
+    with TestClient(app) as client:
+        client.post(
+            "/cluster/acquire",
+            json={"node_id": "A"},
+        )
+
+        response = client.post(
+            "/cluster/renew",
+            json={
+                "node_id": "B",
+                "epoch": 1,
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "NOT_LEADER"
+
+
+def test_stale_epoch_cannot_renew_lease(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "arbiter.db"
+
+    monkeypatch.setattr(
+        settings,
+        "arbiter_db_path",
+        str(db_path),
+    )
+
+    with TestClient(app) as client:
+        client.post(
+            "/cluster/acquire",
+            json={"node_id": "A"},
+        )
+
+        response = client.post(
+            "/cluster/renew",
+            json={
+                "node_id": "A",
+                "epoch": 999,
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "STALE_EPOCH"
+        
+def test_expired_lease_cannot_be_renewed(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "arbiter.db"
+
+    monkeypatch.setattr(
+        settings,
+        "arbiter_db_path",
+        str(db_path),
+    )
+
+    with TestClient(app) as client:
+        client.post(
+            "/cluster/acquire",
+            json={"node_id": "A"},
+        )
+
+        connection = get_connection()
+
+        try:
+            connection.execute(
+                """
+                UPDATE cluster_state
+                SET lease_expires_at = ?
+                WHERE id = 1
+                """,
+                (time.time() - 1,),
+            )
+            connection.commit()
+
+        finally:
+            connection.close()
+
+        response = client.post(
+            "/cluster/renew",
+            json={
+                "node_id": "A",
+                "epoch": 1,
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "LEASE_EXPIRED"
