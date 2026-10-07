@@ -2,11 +2,17 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from arbiter.app.config import settings
 from arbiter.app.database import (
     get_cluster_state,
     initialize_database,
+)
+from arbiter.app.models import AcquireLeaseRequest
+from arbiter.app.services import (
+    LeaseHeldError,
+    acquire_leadership,
 )
 
 
@@ -47,4 +53,29 @@ def cluster_status():
         "epoch": state["epoch"],
         "lease_expires_at": lease_expires_at,
         "lease_valid": lease_valid,
+    }
+
+
+@app.post("/cluster/acquire")
+def acquire_lease(payload: AcquireLeaseRequest):
+    try:
+        result = acquire_leadership(payload.node_id)
+
+    except LeaseHeldError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "code": "LEASE_HELD",
+                "leader_id": exc.leader_id,
+                "epoch": exc.epoch,
+                "lease_expires_at": exc.lease_expires_at,
+            },
+        )
+
+    return {
+        "status": "success",
+        "leader_id": result["leader_id"],
+        "epoch": result["epoch"],
+        "lease_expires_at": result["lease_expires_at"],
     }
