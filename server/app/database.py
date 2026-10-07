@@ -10,7 +10,7 @@ def get_connection() -> sqlite3.Connection:
 
     connection = sqlite3.connect(
         db_path,
-        timeout=10,
+        timeout=30,
         check_same_thread=False,
     )
 

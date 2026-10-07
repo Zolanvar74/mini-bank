@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
+import asyncio
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from server.app.database import initialize_database
