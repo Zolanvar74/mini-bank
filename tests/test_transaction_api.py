@@ -33,3 +33,51 @@ def test_unknown_account_api(test_db):
 
     assert response.status_code == 404
     assert response.json()["code"] == "UNKNOWN_ACCOUNT"
+
+def test_deposit_api(test_db):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/transaction",
+            json={
+                "request_id": "api-deposit-001",
+                "action": "deposit",
+                "account": "A1001",
+                "amount": 200,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert response.json()["balance"] == 1200
+
+
+def test_invalid_amount_api(test_db):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/transaction",
+            json={
+                "request_id": "api-invalid-001",
+                "action": "deposit",
+                "account": "A1001",
+                "amount": -50,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_AMOUNT"
+
+
+def test_unsupported_action_api(test_db):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/transaction",
+            json={
+                "request_id": "api-transfer-001",
+                "action": "transfer",
+                "account": "A1001",
+                "amount": 100,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "UNSUPPORTED_ACTION"

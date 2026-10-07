@@ -1,15 +1,10 @@
-from typing import Literal
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class TransactionRequest(BaseModel):
-    action: Literal["balance", "deposit", "withdraw"]
-    account: str
-    amount: int | None = None
-
-
-class SuccessResponse(BaseModel):
-    status: str = "success"
-    account: str
-    balance: int
+    request_id: str | None = None
+    action: str
+    account: str | None = None
+    amount: Any = None

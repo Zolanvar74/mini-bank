@@ -34,4 +34,17 @@ def initialize_database() -> None:
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS request_results (
+                request_id TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                account_id TEXT,
+                status TEXT NOT NULL,
+                response_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         connection.commit()
