@@ -12,6 +12,14 @@ from arbiter.app.database import (
 from arbiter.app.models import (
     AcquireLeaseRequest,
     RenewLeaseRequest,
+    WalCommitRequest,
+)
+from arbiter.app.wal_service import (
+    WalCommitRejected,
+    WalRequestConflict,
+    commit_wal_entry,
+    get_wal_since,
+    get_wal_status,
 )
 from arbiter.app.services import (
     LeaseHeldError,
@@ -58,6 +66,71 @@ def cluster_status():
         "epoch": state["epoch"],
         "lease_expires_at": lease_expires_at,
         "lease_valid": lease_valid,
+    }
+    
+@app.post("/wal/commit")
+def wal_commit(payload: WalCommitRequest):
+    try:
+        result = commit_wal_entry(
+            node_id=payload.node_id,
+            epoch=payload.epoch,
+            request_id=payload.request_id,
+            action=payload.action,
+            account_id=payload.account_id,
+            amount=payload.amount,
+            status=payload.status,
+            balance_after=payload.balance_after,
+            response_json=payload.response_json,
+        )
+
+    except WalCommitRejected as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "code": exc.code,
+                "leader_id": exc.leader_id,
+                "epoch": exc.epoch,
+            },
+        )
+
+    except WalRequestConflict:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "code": "REQUEST_ID_CONFLICT",
+            },
+        )
+
+    return {
+        "status": "success",
+        **result,
+    }
+
+
+@app.get("/wal/since/{seq}")
+def wal_since(seq: int):
+    if seq < 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "INVALID_SEQUENCE",
+            },
+        )
+
+    return {
+        "status": "success",
+        "entries": get_wal_since(seq),
+    }
+
+
+@app.get("/wal/status")
+def wal_status():
+    return {
+        "status": "success",
+        **get_wal_status(),
     }
 
 

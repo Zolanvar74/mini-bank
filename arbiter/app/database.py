@@ -52,6 +52,23 @@ def initialize_database() -> None:
             VALUES (1, NULL, 0, NULL)
             """
         )
+        
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wal (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                epoch INTEGER NOT NULL,
+                request_id TEXT NOT NULL UNIQUE,
+                action TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                balance_after INTEGER,
+                response_json TEXT NOT NULL,
+                committed_at TEXT NOT NULL
+            )
+            """
+        )
 
         connection.commit()
 
