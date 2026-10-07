@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from server.app.core.cluster_manager import ClusterManager
 from server.app.core.audit_logger import write_audit_log
 from server.app.core.config import settings
 from server.app.database import initialize_database
@@ -33,7 +34,15 @@ async def lifespan(app: FastAPI):
         settings.max_clients
     )
 
-    yield
+    cluster_manager = ClusterManager()
+    app.state.cluster_manager = cluster_manager
+
+    await cluster_manager.start()
+
+    try:
+        yield
+    finally:
+        await cluster_manager.stop()
 
 
 app = FastAPI(
@@ -211,6 +220,9 @@ def health():
         "service": "banking-server",
     }
 
+@app.get("/cluster/local-status")
+async def local_cluster_status(request: Request):
+    return await request.app.state.cluster_manager.snapshot()
 
 @app.post("/api/transaction")
 def transaction(

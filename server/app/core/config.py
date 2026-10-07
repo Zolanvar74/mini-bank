@@ -17,7 +17,11 @@ class Settings(BaseSettings):
     lease_ttl_ms: int = 3000
     heartbeat_interval_ms: int = 500
 
+    cluster_enabled: bool = False
+    auto_acquire_enabled: bool = False
     enable_fault_injection: bool = False
+    
+    cluster_request_timeout_seconds: float = 1.0
 
     model_config = SettingsConfigDict(
         env_file=".env",
