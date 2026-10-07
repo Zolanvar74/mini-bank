@@ -24,7 +24,9 @@ def get_connection() -> sqlite3.Connection:
 
 
 def initialize_database() -> None:
-    with get_connection() as connection:
+    connection = get_connection()
+
+    try:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS accounts (
@@ -40,6 +42,7 @@ def initialize_database() -> None:
                 request_id TEXT PRIMARY KEY,
                 action TEXT NOT NULL,
                 account_id TEXT,
+                amount INTEGER,
                 status TEXT NOT NULL,
                 response_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
@@ -48,3 +51,6 @@ def initialize_database() -> None:
         )
 
         connection.commit()
+
+    finally:
+        connection.close()

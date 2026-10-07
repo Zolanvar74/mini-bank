@@ -81,3 +81,34 @@ def test_unsupported_action_api(test_db):
 
     assert response.status_code == 400
     assert response.json()["code"] == "UNSUPPORTED_ACTION"
+    
+def test_withdraw_api(test_db):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/transaction",
+            json={
+                "request_id": "api-withdraw-001",
+                "action": "withdraw",
+                "account": "A1001",
+                "amount": 200,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["balance"] == 800
+
+
+def test_insufficient_funds_api(test_db):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/transaction",
+            json={
+                "request_id": "api-withdraw-002",
+                "action": "withdraw",
+                "account": "A1001",
+                "amount": 5000,
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "INSUFFICIENT_FUNDS"
