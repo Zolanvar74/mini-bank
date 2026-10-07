@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from server.app.database import get_connection
 
 
+
+
 class AccountNotFoundError(Exception):
     pass
 
@@ -21,6 +23,9 @@ class InsufficientFundsError(Exception):
 
 
 class RequestIdConflictError(Exception):
+    pass
+
+class SimulatedFailureError(Exception):
     pass
 
 
@@ -128,7 +133,9 @@ def deposit(
     request_id: str,
     account_id: str,
     amount,
+    fail_after_update: bool = False,
 ) -> dict:
+
     amount = validate_amount(amount)
 
     connection = get_connection()
@@ -171,6 +178,11 @@ def deposit(
             (new_balance, account_id),
         )
 
+        if fail_after_update:
+            raise SimulatedFailureError(
+                "Simulated failure after balance update."
+            )
+
         response = {
             "request_id": request_id,
             "status": "success",
@@ -202,6 +214,7 @@ def withdraw(
     request_id: str,
     account_id: str,
     amount,
+    fail_after_update: bool = False,
 ) -> dict:
     amount = validate_amount(amount)
 
@@ -247,6 +260,11 @@ def withdraw(
             """,
             (new_balance, account_id),
         )
+
+        if fail_after_update:
+            raise SimulatedFailureError(
+                "Simulated failure after balance update."
+            )
 
         response = {
             "request_id": request_id,
