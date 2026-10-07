@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from server.app.core.audit_logger import write_audit_log
 from server.app.core.config import settings
@@ -40,6 +41,65 @@ app = FastAPI(
     version="0.4.0",
     lifespan=lifespan,
 )
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+):
+    errors = exc.errors()
+
+    for error in errors:
+        error_type = error.get("type")
+
+        if error_type == "json_invalid":
+            request.state.result = "MALFORMED_REQUEST"
+
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "code": "MALFORMED_REQUEST",
+                    "message": "Request body contains invalid JSON.",
+                },
+            )
+
+    missing_fields = []
+
+    for error in errors:
+        if error.get("type") == "missing":
+            location = error.get("loc", [])
+
+            if location:
+                missing_fields.append(
+                    str(location[-1])
+                )
+
+    if missing_fields:
+        request.state.result = "MISSING_FIELD"
+
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "MISSING_FIELD",
+                "message": (
+                    "Missing required field(s): "
+                    + ", ".join(missing_fields)
+                ),
+            },
+        )
+
+    request.state.result = "INVALID_REQUEST"
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "status": "error",
+            "code": "INVALID_REQUEST",
+            "message": "Request validation failed.",
+        },
+    )
 
 
 def error_response(
