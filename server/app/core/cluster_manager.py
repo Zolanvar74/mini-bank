@@ -60,23 +60,22 @@ class ClusterManager:
                     settings.auto_acquire_enabled
                 ),
             }
-            
-def write_context(self) -> dict:
-    lease_valid = (
-        self.lease_expires_at is not None
-        and self.lease_expires_at > time.time()
-    )
 
-    return {
-        "role": self.role,
-        "epoch": self.epoch,
-        "lease_valid": lease_valid,
-    }
+    def write_context(self) -> dict:
+        lease_valid = (
+            self.lease_expires_at is not None
+            and self.lease_expires_at > time.time()
+        )
 
+        return {
+            "role": self.role,
+            "epoch": self.epoch,
+            "lease_valid": lease_valid,
+        }
 
-def fence_now(self, reason: str) -> None:
-    self.role = "FENCED"
-    self.last_error = reason
+    def fence_now(self, reason: str) -> None:
+        self.role = "FENCED"
+        self.last_error = reason
 
     async def _set_state(
         self,
@@ -137,7 +136,9 @@ def fence_now(self, reason: str) -> None:
 
         await self._set_state(
             role="FOLLOWER",
-            last_error=f"ARBITER_HTTP_{response.status_code}",
+            last_error=(
+                f"ARBITER_HTTP_{response.status_code}"
+            ),
         )
 
     async def _renew(
@@ -161,14 +162,15 @@ def fence_now(self, reason: str) -> None:
             )
 
         except httpx.RequestError:
-            # Arbiter may be temporarily unavailable.
-            # The local lease is trusted only until its known expiry.
             if (
                 self.lease_expires_at is not None
-                and time.time() < self.lease_expires_at
+                and time.time()
+                < self.lease_expires_at
             ):
                 async with self._lock:
-                    self.last_error = "ARBITER_UNREACHABLE"
+                    self.last_error = (
+                        "ARBITER_UNREACHABLE"
+                    )
                 return
 
             await self._set_state(
@@ -185,14 +187,19 @@ def fence_now(self, reason: str) -> None:
             await self._set_state(
                 role="PRIMARY",
                 epoch=body["epoch"],
-                lease_expires_at=body["lease_expires_at"],
+                lease_expires_at=body[
+                    "lease_expires_at"
+                ],
                 last_error=None,
             )
             return
 
         await self._set_state(
             role="FENCED",
-            epoch=body.get("epoch", self.epoch),
+            epoch=body.get(
+                "epoch",
+                self.epoch,
+            ),
             lease_expires_at=body.get(
                 "lease_expires_at",
                 self.lease_expires_at,
@@ -216,15 +223,20 @@ def fence_now(self, reason: str) -> None:
                 try:
                     if (
                         self.role == "PRIMARY"
-                        and self.lease_expires_at is not None
+                        and self.lease_expires_at
+                        is not None
                         and time.time()
                         >= self.lease_expires_at
                     ):
                         await self._set_state(
                             role="FENCED",
                             epoch=self.epoch,
-                            lease_expires_at=self.lease_expires_at,
-                            last_error="LEASE_EXPIRED",
+                            lease_expires_at=(
+                                self.lease_expires_at
+                            ),
+                            last_error=(
+                                "LEASE_EXPIRED"
+                            ),
                         )
 
                     if self.role == "PRIMARY":
@@ -235,8 +247,6 @@ def fence_now(self, reason: str) -> None:
                         and settings.auto_acquire_enabled
                     ):
                         await self._acquire(client)
-                        
-                    
 
                     await asyncio.sleep(
                         settings.heartbeat_interval_ms
@@ -249,7 +259,7 @@ def fence_now(self, reason: str) -> None:
                 except Exception as exc:
                     async with self._lock:
                         self.last_error = (
-                            f"HEARTBEAT_ERROR: "
+                            "HEARTBEAT_ERROR: "
                             f"{type(exc).__name__}"
                         )
 
