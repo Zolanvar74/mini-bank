@@ -4,10 +4,17 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from server.app.services.replica_service import (
+    ReplicaApplyError,
+    ReplicaGapError,
+    sync_from_arbiter,
+)
 from server.app.core.wal_client import (
     ArbiterUnavailableError,
     WalRejectedError,
@@ -16,7 +23,10 @@ from server.app.core.wal_client import (
 from server.app.core.cluster_manager import ClusterManager
 from server.app.core.audit_logger import write_audit_log
 from server.app.core.config import settings
-from server.app.database import initialize_database
+from server.app.database import (
+    get_last_seq,
+    initialize_database,
+)
 from server.app.models import TransactionRequest
 from server.app.services.banking_service import (
     AccountNotFoundError,
@@ -278,7 +288,69 @@ def health():
 
 @app.get("/cluster/local-status")
 async def local_cluster_status(request: Request):
-    return await request.app.state.cluster_manager.snapshot()
+    result = await (
+        request.app.state.cluster_manager.snapshot()
+    )
+
+    result["last_seq"] = get_last_seq()
+
+    return result
+
+
+@app.post("/cluster/sync-now")
+def cluster_sync_now(request: Request):
+    context = (
+        request.app.state.cluster_manager
+        .write_context()
+    )
+
+    if context["role"] == "PRIMARY":
+        return error_response(
+            request,
+            409,
+            "PRIMARY_CANNOT_SYNC",
+            (
+                "An active primary cannot replay "
+                "replica WAL."
+            ),
+        )
+
+    try:
+        result = sync_from_arbiter()
+
+    except ArbiterUnavailableError:
+        return error_response(
+            request,
+            503,
+            "ARBITER_UNAVAILABLE",
+            "Could not fetch WAL from Arbiter.",
+        )
+
+    except ReplicaGapError:
+        return error_response(
+            request,
+            409,
+            "WAL_GAP",
+            (
+                "Replica WAL sequence contains "
+                "a gap."
+            ),
+        )
+
+    except ReplicaApplyError:
+        return error_response(
+            request,
+            409,
+            "WAL_APPLY_FAILED",
+            "Replica could not apply WAL.",
+        )
+
+    request.state.result = "success"
+
+    return {
+        "status": "success",
+        **result,
+    }
 
 @app.post("/api/transaction")
 def transaction(
