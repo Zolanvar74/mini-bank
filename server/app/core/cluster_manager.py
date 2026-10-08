@@ -60,6 +60,23 @@ class ClusterManager:
                     settings.auto_acquire_enabled
                 ),
             }
+            
+def write_context(self) -> dict:
+    lease_valid = (
+        self.lease_expires_at is not None
+        and self.lease_expires_at > time.time()
+    )
+
+    return {
+        "role": self.role,
+        "epoch": self.epoch,
+        "lease_valid": lease_valid,
+    }
+
+
+def fence_now(self, reason: str) -> None:
+    self.role = "FENCED"
+    self.last_error = reason
 
     async def _set_state(
         self,
@@ -213,8 +230,13 @@ class ClusterManager:
                     if self.role == "PRIMARY":
                         await self._renew(client)
 
-                    elif settings.auto_acquire_enabled:
+                    elif (
+                        self.role == "FOLLOWER"
+                        and settings.auto_acquire_enabled
+                    ):
                         await self._acquire(client)
+                        
+                    
 
                     await asyncio.sleep(
                         settings.heartbeat_interval_ms

@@ -8,6 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from server.app.core.wal_client import (
+    ArbiterUnavailableError,
+    WalRejectedError,
+    commit_transaction_to_wal,
+)
 from server.app.core.cluster_manager import ClusterManager
 from server.app.core.audit_logger import write_audit_log
 from server.app.core.config import settings
@@ -127,6 +132,57 @@ def error_response(
             "message": message,
         },
     )
+    
+    
+class NotPrimaryError(Exception):
+    pass
+
+
+def get_write_epoch(request: Request) -> int | None:
+    if not settings.cluster_enabled:
+        return None
+
+    context = (
+        request.app.state.cluster_manager
+        .write_context()
+    )
+
+    if (
+        context["role"] != "PRIMARY"
+        or not context["lease_valid"]
+        or context["epoch"] is None
+    ):
+        raise NotPrimaryError()
+
+    return context["epoch"]
+
+
+def build_wal_commit_callback(
+    request: Request,
+    payload: TransactionRequest,
+    action: str,
+):
+    epoch = get_write_epoch(request)
+
+    if epoch is None:
+        return None
+
+    def wal_commit(
+        response: dict,
+        balance_after: int,
+    ):
+        return commit_transaction_to_wal(
+            node_id=settings.node_id,
+            epoch=epoch,
+            request_id=payload.request_id,
+            action=action,
+            account_id=payload.account,
+            amount=payload.amount,
+            balance_after=balance_after,
+            response_json=response,
+        )
+
+    return wal_commit
 
 
 @app.middleware("http")
@@ -280,15 +336,21 @@ def transaction(
             )
 
         try:
+            
+            wal_commit = build_wal_commit_callback(
+                request,
+                payload,
+                "deposit",
+            )
             response = deposit(
                 request_id=payload.request_id,
                 account_id=payload.account,
                 amount=payload.amount,
                 fail_after_update=(
                     settings.enable_fault_injection
-                    and payload.failpoint
-                    == "after_update"
+                    and payload.failpoint == "after_update"
                 ),
+                wal_commit=wal_commit,
             )
 
             request.state.result = "success"
@@ -342,6 +404,40 @@ def transaction(
                     "before transaction commit."
                 ),
             )
+        except NotPrimaryError:
+            return error_response(
+                request,
+                503,
+                "NOT_PRIMARY",
+                "This server is not the active primary.",
+            )
+
+        except ArbiterUnavailableError:
+            request.app.state.cluster_manager.fence_now(
+                "WAL_COMMIT_UNCERTAIN"
+            )
+
+            return error_response(
+                request,
+                503,
+                "REPLICATION_UNAVAILABLE",
+                (
+                    "The transaction could not be "
+                    "durably confirmed by the Arbiter."
+                ),
+            )
+
+        except WalRejectedError as exc:
+            request.app.state.cluster_manager.fence_now(
+                exc.code
+            )
+
+            return error_response(
+                request,
+                503,
+                exc.code,
+                "The cluster rejected this write.",
+            )
 
     if payload.action == "withdraw":
         if payload.request_id is None:
@@ -353,15 +449,20 @@ def transaction(
             )
 
         try:
+            wal_commit = build_wal_commit_callback(
+                request,
+                payload,
+                "withdraw",
+            )
             response = withdraw(
                 request_id=payload.request_id,
                 account_id=payload.account,
                 amount=payload.amount,
                 fail_after_update=(
                     settings.enable_fault_injection
-                    and payload.failpoint
-                    == "after_update"
+                    and payload.failpoint == "after_update"
                 ),
+                wal_commit=wal_commit,
             )
 
             request.state.result = "success"
@@ -422,6 +523,41 @@ def transaction(
                     "A simulated failure occurred "
                     "before transaction commit."
                 ),
+            )
+            
+        except NotPrimaryError:
+            return error_response(
+                request,
+                503,
+                "NOT_PRIMARY",
+                "This server is not the active primary.",
+            )
+
+        except ArbiterUnavailableError:
+            request.app.state.cluster_manager.fence_now(
+                "WAL_COMMIT_UNCERTAIN"
+            )
+
+            return error_response(
+                request,
+                503,
+                "REPLICATION_UNAVAILABLE",
+                (
+                    "The transaction could not be "
+                    "durably confirmed by the Arbiter."
+                ),
+            )
+
+        except WalRejectedError as exc:
+            request.app.state.cluster_manager.fence_now(
+                exc.code
+            )
+
+            return error_response(
+                request,
+                503,
+                exc.code,
+                "The cluster rejected this write.",
             )
 
     return error_response(

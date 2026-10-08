@@ -1,10 +1,15 @@
 import json
 from datetime import datetime, timezone
 
-from server.app.database import get_connection
+from server.app.database import (
+    get_connection,
+    set_last_seq,
+)
+
+from collections.abc import Callable
 
 
-
+WalCommitCallback = Callable[[dict, int], dict]
 
 class AccountNotFoundError(Exception):
     pass
@@ -96,6 +101,7 @@ def get_previous_result(
     return json.loads(row["response_json"])
 
 
+
 def store_result(
     connection,
     request_id: str,
@@ -134,6 +140,7 @@ def deposit(
     account_id: str,
     amount,
     fail_after_update: bool = False,
+    wal_commit: WalCommitCallback | None = None,
 ) -> dict:
 
     amount = validate_amount(amount)
@@ -189,6 +196,17 @@ def deposit(
             "account": account_id,
             "balance": new_balance,
         }
+        
+        if wal_commit is not None:
+            wal_result = wal_commit(
+                response,
+                new_balance,
+            )
+
+            set_last_seq(
+                connection,
+                wal_result["seq"],
+            )
 
         store_result(
             connection,
@@ -215,7 +233,9 @@ def withdraw(
     account_id: str,
     amount,
     fail_after_update: bool = False,
+    wal_commit: WalCommitCallback | None = None,
 ) -> dict:
+    
     amount = validate_amount(amount)
 
     connection = get_connection()
@@ -272,6 +292,17 @@ def withdraw(
             "account": account_id,
             "balance": new_balance,
         }
+        
+        if wal_commit is not None:
+            wal_result = wal_commit(
+                response,
+                new_balance,
+            )
+
+            set_last_seq(
+                connection,
+                wal_result["seq"],
+            )
 
         store_result(
             connection,
