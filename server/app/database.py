@@ -49,8 +49,62 @@ def initialize_database() -> None:
             )
             """
         )
+        
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS replica_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_seq INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+
+        connection.execute(
+    """
+    INSERT OR IGNORE INTO replica_state (
+        id,
+        last_seq
+    )
+    VALUES (1, 0)
+    """
+)
 
         connection.commit()
 
     finally:
         connection.close()
+        
+def get_last_seq() -> int:
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT last_seq
+            FROM replica_state
+            WHERE id = 1
+            """
+        ).fetchone()
+
+        return row["last_seq"]
+
+    finally:
+        connection.close()
+
+
+def set_last_seq(
+    connection: sqlite3.Connection,
+    seq: int,
+) -> None:
+    connection.execute(
+        """
+        UPDATE replica_state
+        SET last_seq =
+            CASE
+                WHEN last_seq < ? THEN ?
+                ELSE last_seq
+            END
+        WHERE id = 1
+        """,
+        (seq, seq),
+    )
