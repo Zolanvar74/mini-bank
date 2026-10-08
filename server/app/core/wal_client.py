@@ -73,3 +73,37 @@ def commit_transaction_to_wal(
         f"Unexpected Arbiter response: "
         f"HTTP {response.status_code}"
     )
+    
+def fetch_wal_since(seq: int) -> list[dict]:
+    try:
+        response = httpx.get(
+            f"{settings.arbiter_url}/wal/since/{seq}",
+            timeout=settings.cluster_request_timeout_seconds,
+        )
+
+    except httpx.RequestError as exc:
+        raise ArbiterUnavailableError(
+            "Could not fetch WAL from Arbiter."
+        ) from exc
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise ArbiterUnavailableError(
+            "Arbiter returned invalid JSON."
+        ) from exc
+
+    if response.status_code != 200:
+        raise ArbiterUnavailableError(
+            f"Unexpected Arbiter response: "
+            f"HTTP {response.status_code}"
+        )
+
+    entries = body.get("entries")
+
+    if not isinstance(entries, list):
+        raise ArbiterUnavailableError(
+            "Arbiter returned invalid WAL entries."
+        )
+
+    return entries
